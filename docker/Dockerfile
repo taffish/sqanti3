@@ -3,33 +3,30 @@ ARG RUNTIME_BASE_IMAGE=debian:12-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b
 
 FROM ${MAMBA_BASE_IMAGE} AS builder
 
-ARG SQANTI3_VERSION=6.0.2
-ARG SQANTI3_BUILD=hdfd78af_1
-ARG SQANTI3_PACKAGE_URL=https://api.anaconda.org/download/bioconda/sqanti3/6.0.2/noarch/sqanti3-6.0.2-hdfd78af_1.conda
-ARG SQANTI3_PACKAGE_SHA256=4cad63d2338d59c9dd90bdd3c0b3a41bcba87bac7e3e93866a5bb14f9cd97ca6
-ARG SQANTI3_SOURCE_URL=https://github.com/ConesaLab/SQANTI3/archive/refs/tags/v6.0.2.tar.gz
-ARG SQANTI3_SOURCE_SHA256=e8711e6bd9455415fdd0380f19c283fa6e4c12c13ca53274ba1b106fda006013
+ARG TARGETARCH
+ARG SQANTI3_VERSION=6.1
+ARG SQANTI3_SOURCE_URL=https://github.com/ConesaLab/SQANTI3/archive/refs/tags/v6.1.tar.gz
+ARG SQANTI3_SOURCE_SHA256=f5a58b4a4ac395c1217c71a2e693157b698b59910d9ae061dcfa1badc433abe2
 ARG GENOMEINFODBDATA_URL=https://mirror4.twds.com.tw/kali/pool/main/r/r-bioc-genomeinfodbdata/r-bioc-genomeinfodbdata_1.2.13.orig.tar.gz
 ARG GENOMEINFODBDATA_SHA256=51a33c432e65261ef81a7c2039b17cbdf7a0b417376fdb7ada4d618566f7074e
 
 USER root
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV MAMBA_DOWNLOAD_THREADS=1
+ENV MAMBA_DOWNLOAD_THREADS=4
 ENV MAMBA_EXTRACT_THREADS=1
 
-ADD --checksum=sha256:4cad63d2338d59c9dd90bdd3c0b3a41bcba87bac7e3e93866a5bb14f9cd97ca6 \
-    https://api.anaconda.org/download/bioconda/sqanti3/6.0.2/noarch/sqanti3-6.0.2-hdfd78af_1.conda \
-    /tmp/sqanti3-6.0.2-hdfd78af_1.conda
-ADD --checksum=sha256:e8711e6bd9455415fdd0380f19c283fa6e4c12c13ca53274ba1b106fda006013 \
-    https://github.com/ConesaLab/SQANTI3/archive/refs/tags/v6.0.2.tar.gz \
+# GitHub tag archives and this mirror may disappear or be replaced. A checksum
+# mismatch must fail closed; re-audit upstream and create a new release, never
+# silently remove checksum verification or substitute a different version.
+ADD --checksum=sha256:f5a58b4a4ac395c1217c71a2e693157b698b59910d9ae061dcfa1badc433abe2 \
+    https://github.com/ConesaLab/SQANTI3/archive/refs/tags/v6.1.tar.gz \
     /tmp/sqanti3-source.tar.gz
 ADD --checksum=sha256:51a33c432e65261ef81a7c2039b17cbdf7a0b417376fdb7ada4d618566f7074e \
     https://mirror4.twds.com.tw/kali/pool/main/r/r-bioc-genomeinfodbdata/r-bioc-genomeinfodbdata_1.2.13.orig.tar.gz \
     /tmp/GenomeInfoDbData_1.2.13.tar.gz
 
 RUN set -eux; \
-    echo "${SQANTI3_PACKAGE_SHA256}  /tmp/sqanti3-6.0.2-hdfd78af_1.conda" | sha256sum -c -; \
     echo "${SQANTI3_SOURCE_SHA256}  /tmp/sqanti3-source.tar.gz" | sha256sum -c -; \
     echo "${GENOMEINFODBDATA_SHA256}  /tmp/GenomeInfoDbData_1.2.13.tar.gz" | sha256sum -c -; \
     echo '8798e58b89d84d9fa6a85f2191704668  /tmp/GenomeInfoDbData_1.2.13.tar.gz' | md5sum -c -; \
@@ -42,7 +39,17 @@ RUN set -eux; \
 
 USER mambauser
 
+# Channel metadata and transitive packages can drift. conda-specs.txt is a
+# compatibility specification, not an immutable archive. Preserve resolved
+# package inventories; revalidate both native platforms in a successor release
+# if a channel removes packages or changes the solve. Do not relax silently.
+COPY --chmod=0644 docker/conda-specs.txt /tmp/conda-specs.txt
+
+# Micromamba 1.x subprocess hooks can fail at enormous builder RLIMIT_NOFILE
+# values (mamba-org/mamba#2501). Bound this build process only; no host/CI change.
 RUN set -eux; \
+    file_limit=$(ulimit -n); \
+    if [ "$file_limit" = unlimited ] || [ "$file_limit" -gt 65536 ]; then ulimit -n 65536; fi; \
     micromamba install -y -n base \
       -c conda-forge \
       --strict-channel-priority \
@@ -63,29 +70,38 @@ RUN set -eux; \
       "${data_urls}"; \
     grep -F 'file:///opt/conda/share/bioconductor-data-packages/GenomeInfoDbData_1.2.13.tar.gz' "${data_urls}" >/dev/null
 
+# Some packages labelled cpu still declare CUDA dependencies. Select the actual
+# native non-CUDA builds explicitly rather than a cpu_* glob that can drift.
+# ARM64 needs the R 4.4.2 ICU75/libdeflate1.22 build to coexist with upstream's
+# pysam<0.23. AMD64 uses R 4.4.3; both retain the R 4.4/Bioconductor 3.20 ABI.
+# Clean only before the first attempt: transient download/DNS failures must
+# not discard already verified package downloads. Extraction remains serial;
+# the final successful install still removes all package caches from the image.
 RUN set -eux; \
+    file_limit=$(ulimit -n); \
+    if [ "$file_limit" = unlimited ] || [ "$file_limit" -gt 65536 ]; then ulimit -n 65536; fi; \
+    cp /tmp/conda-specs.txt /tmp/native-conda-specs.txt; \
+    case "${TARGETARCH}" in \
+      amd64) audio_build=cpu_py311hc9a7e9d_1; kaldi_build=cpu_h7360626_9 ;; \
+      arm64) audio_build=cpu_py311ha795382_1; kaldi_build=cpu_h0a9ba76_9; \
+        sed -i 's/^r-base=4.4.3$/r-base=4.4.2=hdb75f2f_1/' /tmp/native-conda-specs.txt ;; \
+      *) exit 2 ;; \
+    esac; \
+    micromamba clean -a -y; \
+    rm -rf /opt/conda/pkgs/*; \
     for attempt in 1 2 3; do \
-      micromamba clean -a -y || true; \
-      rm -rf /opt/conda/pkgs/*; \
       if micromamba install -y -n base \
           -c conda-forge \
           -c bioconda \
           --strict-channel-priority \
-          "sqanti3=${SQANTI3_VERSION}=${SQANTI3_BUILD}" \
-          "ucsc-gtftogenepred=482" \
-          "pytorch=2.5.1=cpu_generic_*" \
-          "torchvision=0.20.1=cpu_*" \
-          "torchaudio=2.5.1=cpu_*" \
-          "td2=1.1.0" \
-          "psauron=1.1.3" \
-          nomkl; then \
+          --file /tmp/native-conda-specs.txt "torchaudio=2.5.1=${audio_build}" "kaldi=5.5.1112=${kaldi_build}"; then \
         break; \
       fi; \
       if [ "${attempt}" = "3" ]; then exit 1; fi; \
       sleep 10; \
     done; \
     if ls /opt/conda/conda-meta/cudatoolkit-*.json >/dev/null 2>&1; then \
-      micromamba remove -y -n base --force --no-prune cudatoolkit; \
+      echo 'Unexpected CUDA dependency in the CPU closure' >&2; exit 1; \
     fi; \
     /opt/conda/bin/python -c 'import torch, torchaudio; x = torch.randn(1, 160); y = torchaudio.functional.resample(x, 16000, 8000); assert y.shape == (1, 80); assert torch.version.cuda is None'; \
     : > /tmp/torchaudio-ldd.txt; \
@@ -104,7 +120,14 @@ ENV LD_LIBRARY_PATH=/opt/conda/lib
 
 RUN set -eux; \
     source_dir="/opt/conda/share/sqanti3-${SQANTI3_VERSION}-1"; \
-    test -d "${source_dir}"; \
+    install -d -m 0755 "${source_dir}"; \
+    cp -a /tmp/sqanti3-release/src "${source_dir}/"; \
+    cp /tmp/sqanti3-release/sqanti3 /tmp/sqanti3-release/*.py \
+      /tmp/sqanti3-release/sqanti3_config.yaml "${source_dir}/"; \
+    for command in sqanti3 sqanti3_qc.py sqanti3_filter.py sqanti3_rescue.py sqanti3_reads.py; do \
+      chmod 0755 "${source_dir}/${command}"; \
+      ln -s "${source_dir}/${command}" "/opt/conda/bin/${command}"; \
+    done; \
     test -x /opt/conda/bin/gtfToGenePred; \
     rm -f "${source_dir}/src/utilities/gtfToGenePred-linux-x86_64"; \
     ln -s /opt/conda/bin/gtfToGenePred \
@@ -114,6 +137,12 @@ RUN set -eux; \
       /opt/sqanti3/share/doc/sqanti3/manual \
       /opt/sqanti3/share/licenses/sqanti3 \
       /opt/sqanti3/share/testdata; \
+    mkdir -p /opt/sqanti3/share/testdata/reads; \
+    cp -a /tmp/sqanti3-release/test/test_data/sqanti_reads/reference \
+      /tmp/sqanti3-release/test/test_data/sqanti_reads/sqanti_dirs \
+      /tmp/sqanti3-release/test/test_data/sqanti_reads/baseline \
+      /tmp/sqanti3-release/test/test_data/sqanti_reads/design.csv \
+      /opt/sqanti3/share/testdata/reads/; \
     cp -a /tmp/sqanti3-release/docs/. /opt/sqanti3/share/doc/sqanti3/manual/; \
     cp /tmp/sqanti3-release/README.md \
       /tmp/sqanti3-release/sqanti3_config.yaml \
@@ -127,15 +156,14 @@ RUN set -eux; \
       printf 'name=SQANTI3\n'; \
       printf 'version=%s\n' "${SQANTI3_VERSION}"; \
       printf 'upstream_tag=v%s\n' "${SQANTI3_VERSION}"; \
-      printf 'upstream_commit=7c202b5dc846fa4bcd99c20d1dbfc3d721edc80c\n'; \
+      printf 'upstream_commit=589dfd41e84b6e73ef27cf20d7a823131e02465f\n'; \
       printf 'source_archive=%s\n' "${SQANTI3_SOURCE_URL}"; \
       printf 'source_archive_sha256=%s\n' "${SQANTI3_SOURCE_SHA256}"; \
-      printf 'runtime_package=bioconda::sqanti3=%s=%s\n' "${SQANTI3_VERSION}" "${SQANTI3_BUILD}"; \
-      printf 'runtime_package_sha256=%s\n' "${SQANTI3_PACKAGE_SHA256}"; \
+      printf 'runtime_source=official checksum-pinned source; dependencies from conda-forge/bioconda\n'; \
       printf 'GenomeInfoDbData_source=%s\n' "${GENOMEINFODBDATA_URL}"; \
       printf 'GenomeInfoDbData_sha256=%s\n' "${GENOMEINFODBDATA_SHA256}"; \
       printf 'pytorch=2.5.1 CPU generic\n'; \
-      printf 'torchaudio=2.5.1 CPU; unused amd64 cudatoolkit package removed after functional and linkage checks\n'; \
+      printf 'torchaudio=2.5.1 native CPU build without CUDA dependency; recorded in conda-explicit.txt\n'; \
       printf 'native_gtfToGenePred=bioconda::ucsc-gtftogenepred=482\n'; \
       printf 'runtime_profile=compiler frontends, development headers, and dependency test fixtures removed after smoke validation\n'; \
       printf 'platforms=linux/amd64,linux/arm64\n'; \
@@ -178,20 +206,19 @@ RUN set -eux; \
       /tmp/conda-explicit.txt \
       /tmp/conda-packages.txt \
       /tmp/GenomeInfoDbData_1.2.13.tar.gz \
-      /tmp/sqanti3-6.0.2-hdfd78af_1.conda \
       /tmp/sqanti3-release \
       /tmp/sqanti3-source.tar.gz \
       /root/.cache
 
 FROM ${RUNTIME_BASE_IMAGE} AS runtime
 
-ARG SQANTI3_VERSION=6.0.2
+ARG SQANTI3_VERSION=6.1
 
 LABEL org.opencontainers.image.title="TAFFISH sqanti3"
-LABEL org.opencontainers.image.description="SQANTI3 6.0.2 long-read transcriptome QC, filtering, rescue, and SQANTI-reads runtime"
+LABEL org.opencontainers.image.description="SQANTI3 6.1 long-read transcriptome QC, filtering, rescue, and SQANTI-reads runtime"
 LABEL org.opencontainers.image.source="https://github.com/taffish/sqanti3"
 LABEL org.opencontainers.image.url="https://github.com/ConesaLab/SQANTI3"
-LABEL org.opencontainers.image.version="6.0.2-r1"
+LABEL org.opencontainers.image.version="6.1-r1"
 LABEL org.opencontainers.image.licenses="Apache-2.0 AND GPL-3.0-only"
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -210,6 +237,9 @@ ENV XDG_DATA_HOME=/tmp/xdg-data
 ENV OPENBLAS_NUM_THREADS=1
 ENV OMP_NUM_THREADS=1
 
+# Debian mirrors retain current package revisions, not every historical build.
+# A pinned base does not pin this live APT transaction. If it drifts or fails,
+# inspect mirror/package state and revalidate a successor; do not mask failures.
 RUN set -eux; \
     for attempt in 1 2 3 4 5; do \
       if apt-get -o Acquire::Retries=3 update \
@@ -239,8 +269,14 @@ RUN set -eux; \
 COPY --from=builder /opt/conda /opt/conda
 COPY --from=builder /opt/sqanti3 /opt/sqanti3
 COPY docker/sqanti3-smoke.sh /opt/sqanti3/share/testdata/sqanti3-smoke.sh
+COPY --chmod=0644 src/resource_validation.py /opt/sqanti3/lib/resource_validation.py
+COPY --chmod=0755 docker/sqanti3-resources.py /opt/sqanti3/lib/sqanti3-resources
 
 RUN set -eux; \
+    chmod 0755 /opt /opt/conda /opt/sqanti3; \
+    find /opt/conda /opt/sqanti3 -type d -exec chmod a+rx '{}' +; \
+    find /opt/conda /opt/sqanti3 -type f -exec chmod a+r '{}' +; \
+    ln -s /opt/sqanti3/lib/sqanti3-resources /usr/local/bin/sqanti3-resources; \
     chmod 0755 /opt/sqanti3/share/testdata/sqanti3-smoke.sh; \
     dpkg-query -W -f='${Package}==${Version}\n' | sort \
       > /opt/sqanti3/share/doc/sqanti3/debian-packages.txt

@@ -1,0 +1,6 @@
+{
+  "artifact": "taf-sqanti3-v6.1-r1",
+  "schema": "taffish.build/v1",
+  "source_sha256": "98adcb9cf864d8016570b282bd88faa8a568b428d598ad65ef9a4c3c8b698d87",
+  "wrapper_sha256": "6fb50986b0499f436ceecf49a7eb9857653b5d4cc6bdc1f801db7772cfb6afb3"
+}

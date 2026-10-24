@@ -1,7 +1,7 @@
 [package]
 name = "sqanti3"
 kind = "tool"
-version = "6.0.2"
+version = "6.1"
 release = 1
 license = "Apache-2.0"
 main = "src/main.taf"
@@ -17,7 +17,7 @@ pipe = true
 command_mode = true
 
 [container]
-image = "ghcr.io/taffish/sqanti3:6.0.2-r1"
+image = "ghcr.io/taffish/sqanti3:6.1-r1"
 dockerfile = "docker/Dockerfile"
 build_platforms = "linux/amd64,linux/arm64"
 
@@ -25,7 +25,7 @@ build_platforms = "linux/amd64,linux/arm64"
 domain = "bio"
 categories = ["transcriptomics", "long-read", "isoform-quality-control", "annotation", "filtering"]
 keywords = ["SQANTI3", "long-read RNA-seq", "isoform classification", "transcriptome QC", "isoform filtering", "transcript rescue", "SQANTI-reads", "PacBio", "Nanopore"]
-description = "SQANTI3 6.0.2 runtime for long-read transcriptome quality control, isoform classification, filtering, rescue, reporting, and SQANTI-reads analysis."
+description = "SQANTI3 6.1 runtime for long-read transcriptome quality control, isoform classification, filtering, rescue, reporting, and SQANTI-reads analysis."
 
 [upstream]
 name = "SQANTI3"
@@ -33,10 +33,10 @@ type = "github"
 repo = "ConesaLab/SQANTI3"
 homepage = "https://github.com/ConesaLab/SQANTI3"
 manual = "https://conesalab.github.io/SQANTI3/latest/"
-release_url = "https://github.com/ConesaLab/SQANTI3/releases/tag/v6.0.2"
-downloads = "https://github.com/ConesaLab/SQANTI3/releases/download/v6.0.2/SQANTI3_v6.0.2.zip"
-version = "6.0.2"
-commit = "7c202b5dc846fa4bcd99c20d1dbfc3d721edc80c"
+release_url = "https://github.com/ConesaLab/SQANTI3/releases/tag/v6.1"
+downloads = "https://github.com/ConesaLab/SQANTI3/releases/download/v6.1/SQANTI3_v6.1.zip"
+version = "6.1"
+commit = "589dfd41e84b6e73ef27cf20d7a823131e02465f"
 license = "GPL-3.0-only"
 citation = "Pardo-Palacios FJ, et al. SQANTI3: curation of long-read transcriptomes for accurate identification of known and novel isoforms. Nature Methods. 2024."
 doi = "10.1038/s41592-024-02229-2"
@@ -46,5 +46,5 @@ strip_prefix = "v"
 [smoke]
 backend = "docker"
 timeout = 1200
-exist = ["sqanti3", "sqanti3_qc.py", "sqanti3_filter.py", "sqanti3_rescue.py", "sqanti3_reads.py", "python", "python3", "R", "Rscript", "gffread", "gtfToGenePred", "gtftools", "bedtools", "gmap", "gmap_build", "deSALT", "uLTRA", "minimap2", "STAR", "kallisto", "samtools", "seqtk", "TD2.LongOrfs", "TD2.Predict", "pandoc", "perl", "awk", "sed", "grep", "gzip", "bash", "sh", "cut", "sort", "uniq", "paste", "tr", "cat", "mv", "ldd"]
-test = ["/opt/sqanti3/share/testdata/sqanti3-smoke.sh identity | grep -Fx 'sqanti3_identity_ok' >/dev/null", "/opt/sqanti3/share/testdata/sqanti3-smoke.sh modules | grep -Fx 'sqanti3_modules_ok' >/dev/null", "/opt/sqanti3/share/testdata/sqanti3-smoke.sh pipeline | grep -Fx 'sqanti3_pipeline_ok' >/dev/null"]
+exist = ["sqanti3", "sqanti3-resources", "sqanti3_qc.py", "sqanti3_filter.py", "sqanti3_rescue.py", "sqanti3_reads.py", "python", "python3", "R", "Rscript", "gffread", "gtfToGenePred", "gtftools", "bedtools", "gmap", "gmap_build", "deSALT", "uLTRA", "minimap2", "STAR", "kallisto", "samtools", "seqtk", "TD2.LongOrfs", "TD2.Predict", "pandoc", "perl", "awk", "sed", "grep", "gzip", "bash", "sh", "cut", "sort", "uniq", "paste", "tr", "cat", "mv", "ldd"]
+test = ["/opt/sqanti3/share/testdata/sqanti3-smoke.sh identity | grep -Fx 'sqanti3_identity_ok' >/dev/null", "/opt/sqanti3/share/testdata/sqanti3-smoke.sh modules | grep -Fx 'sqanti3_modules_ok' >/dev/null", "/opt/sqanti3/share/testdata/sqanti3-smoke.sh pipeline | grep -Fx 'sqanti3_pipeline_ok' >/dev/null", "/opt/sqanti3/share/testdata/sqanti3-smoke.sh reports | grep -Fx 'sqanti3_reports_ok' >/dev/null", "/opt/sqanti3/share/testdata/sqanti3-smoke.sh resources | grep -Fx 'sqanti3_resources_ok' >/dev/null"]

@@ -4,292 +4,340 @@
 
 Package identity:
 
-- name: `sqanti3`
-- command: `taf-sqanti3`
-- kind: `tool`
-- TAFFISH version: `6.0.2-r1`
-- TAFFISH app license: Apache-2.0
-- upstream release: `ConesaLab/SQANTI3` `v6.0.2`
-- upstream license: GPL-3.0-only
-- container image: `ghcr.io/taffish/sqanti3:6.0.2-r1`
-- native platforms: `linux/amd64`, `linux/arm64`
-- default upstream command: `sqanti3`
+- command: `taf-sqanti3`; kind: `tool`; version: `6.1-r1`
+- image: `ghcr.io/taffish/sqanti3:6.1-r1`
+- native platforms: `linux/amd64`, `linux/arm64`; CPU runtime
+- packaging license: Apache-2.0; upstream license: GPL-3.0-only
 
 ## Installation
 
-```sh
-taf update
-taf install sqanti3
-```
-
-For local validation before publication, use `taf install --from .` in this
-app directory.
+After publication, use `taf update` and `taf install sqanti3`.
+Before publication, use `taf install --from .` in this app directory.
 
 ## What This App Packages
 
-SQANTI3 curates long-read transcriptomes by correcting transcript models,
-classifying isoforms against a reference annotation, annotating splice and
-end-site quality, filtering likely artifacts, and rescuing eligible discarded
-isoforms. It also includes SQANTI-reads for multisample long-read transcriptome
-aggregation and under-annotation analysis.
+The unmodified official v6.1 source (commit
+`589dfd41e84b6e73ef27cf20d7a823131e02465f`) is installed with Conda
+dependencies. Bioconda's SQANTI3 package was still 6.0.2 when this update
+started, so it is not used as the application payload.
+The source archive SHA256 is
+`f5a58b4a4ac395c1217c71a2e693157b698b59910d9ae061dcfa1badc433abe2`.
 
-The image installs the exact Bioconda `sqanti3=6.0.2=hdfd78af_1` package and
-retains the official release documentation and licenses. Its complete Python,
-R, aligner, short-read, ORF-prediction, filtering, rescue, and reporting
-dependency closure is contained in the image; no unrelated host bioinformatics
-command is required.
+No upstream algorithm is patched. The upstream x86-named gtfToGenePred path
+is linked to the architecture-native UCSC binary. The separate
+`sqanti3-resources` packaging helper manages optional evidence files, not
+scientific analysis or species selection.
 
-## Scope
+## Scope and Container Contents
 
-This app supports:
+- `sqanti3`: YAML orchestration (`all`, `qc`, `filter`, `rescue`, `init`).
+- `sqanti3_qc.py`: GTF or FASTA/FASTQ correction, classification and QC.
+- `sqanti3_filter.py`: rules-based and machine-learning filtering.
+- `sqanti3_rescue.py`: automatic/full rescue, evidence checking and requantification.
+- `sqanti3_reads.py`: multisample aggregation, upstream PDF and interactive HTML.
+- minimap2, GMAP, deSALT and uLTRA: long-read alignment options.
+- STAR, kallisto, samtools and seqtk: short-read and sequence helpers.
+- gffread, gtftools, bedtools and native gtfToGenePred: annotation/interval helpers.
+- TD2 1.1.0, PSAURON 1.1.3 and CPU PyTorch 2.5.1: ORF prediction/scoring.
+- Python, R, Plotly and Pandoc: upstream analysis and report dependencies.
+- IsoAnnotLite and the small bundled human/mouse TUSCO panels are retained.
 
-- the `sqanti3` YAML configuration wrapper for `all`, `qc`, `filter`, `rescue`, and `init`
-- `sqanti3_qc.py` with GTF input or FASTA/FASTQ mapping
-- minimap2, GMAP, deSALT, and uLTRA long-read alignment paths
-- optional STAR/kallisto short-read evidence and existing junction, BAM, expression, or abundance inputs
-- optional TD2/PSAURON ORF prediction with `--include_ORF`
-- rules-based and machine-learning isoform filtering
-- automatic and full transcript rescue, including optional requantification
-- SQANTI-reads aggregation from raw inputs or existing SQANTI3 directories
-- HTML and PDF reports through the packaged R and Pandoc runtime
-- optional CAGE, polyA motif/site, phyloP, IsoAnnotLite, TUSCO, and expression evidence
-
-The image does not bundle a species reference genome, reference annotation,
-CAGE peaks, polyA resources, phyloP tracks, short-read datasets, GMAP indexes,
-or production transcriptomes. These inputs are project- and assembly-specific.
-
-## Container Contents
-
-- `sqanti3`: upstream YAML pipeline wrapper and default command
-- `sqanti3_qc.py`: transcript correction, classification, QC, and reporting
-- `sqanti3_filter.py`: rules and machine-learning filtering
-- `sqanti3_rescue.py`: automatic or full rescue of filtered isoforms
-- `sqanti3_reads.py`: multisample SQANTI-reads analysis
-- `gffread`, `gtfToGenePred`, `gtftools`, and `bedtools`: annotation conversion, SQANTI-reads UJC generation, and interval operations
-- `minimap2`, `gmap`, `deSALT`, and `uLTRA`: supported long-read aligners
-- `STAR`, `kallisto`, `samtools`, and `seqtk`: short-read and sequence helper paths
-- `TD2.LongOrfs` and `TD2.Predict`: ORF discovery and PSAURON scoring
-- `R`, `Rscript`, and `pandoc`: QC, filter, rescue, TUSCO, and SQANTI-reads reports
+No production genome, annotation, GMAP index, CAGE/polyA/phyloP collection or
+sequencing study is bundled. GPU execution is not provided.
+The companion tappAS is an independent downstream Java GUI consuming
+IsoAnnotLite output, not a component of this CLI image; install it separately
+from [tappAS](https://app.tappas.org/overview/). SQANTI3's own static reports
+are included. No browser server or exposed port is required.
+This is a deliberate application boundary: tappAS adds its own Java desktop,
+SQLite project lifecycle, R analysis and separately managed annotations. Its
+published hardware requirements include 8 GB RAM and 20 GB free workspace;
+bundling that GUI requires a separate desktop/session and data-governance review.
+The CLI package does not claim to validate the tappAS GUI.
 
 ## Usage
-
-Show wrapper and upstream help:
 
 ```sh
 taf-sqanti3 --help
 taf-sqanti3 -- --help
 taf-sqanti3 sqanti3_qc.py --help
-taf-sqanti3 sqanti3_filter.py rules --help
-```
-
-Run the recommended GTF-based QC path:
-
-```sh
-taf-sqanti3 sqanti3_qc.py \
-  --isoforms collapsed.gtf \
-  --refGTF reference.gtf \
-  --refFasta genome.fa \
-  --dir sqanti3-qc \
-  --output sample \
-  --cpus 8 \
-  --report html
-```
-
-Map transcript sequences before QC:
-
-```sh
-taf-sqanti3 sqanti3_qc.py \
-  --isoforms transcripts.fasta \
-  --fasta \
-  --refGTF reference.gtf \
-  --refFasta genome.fa \
-  --aligner_choice minimap2 \
-  --dir sqanti3-qc \
-  --output sample \
-  --cpus 8
-```
-
-Add ORF prediction:
-
-```sh
-taf-sqanti3 sqanti3_qc.py \
-  --isoforms collapsed.gtf \
-  --refGTF reference.gtf \
-  --refFasta genome.fa \
-  --include_ORF \
-  --dir sqanti3-qc \
-  --output sample \
-  --cpus 8
-```
-
-Filter a QC classification with the upstream default rules:
-
-```sh
-taf-sqanti3 sqanti3_filter.py rules \
-  --sqanti_class sqanti3-qc/sample_classification.txt \
-  --filter_gtf sqanti3-qc/sample_corrected.gtf \
-  --dir sqanti3-filter \
-  --output sample \
-  --cpus 8
-```
-
-Run automatic rescue after rules filtering:
-
-```sh
-taf-sqanti3 sqanti3_rescue.py \
-  --filter_class sqanti3-filter/sample_RulesFilter_classification.txt \
-  --refGTF reference.gtf \
-  --refFasta genome.fa \
-  --corrected_isoforms_fasta sqanti3-qc/sample_corrected.fasta \
-  --filtered_isoforms_gtf sqanti3-filter/sample.filtered.gtf \
-  --strategy rules \
-  --mode automatic \
-  --dir sqanti3-rescue \
-  --output sample \
-  --cpus 8
-```
-
-Create and use an upstream YAML configuration:
-
-```sh
+taf-sqanti3 sqanti3_qc.py --isoforms collapsed.gtf --refGTF reference.gtf --refFasta genome.fa --dir qc-out --output sample --cpus 8 --report html
+taf-sqanti3 sqanti3_filter.py rules --sqanti_class qc-out/sample_classification.txt --filter_gtf qc-out/sample_corrected.gtf --dir filter-out --output sample
+taf-sqanti3 sqanti3_filter.py ml --sqanti_class qc-out/sample_classification.txt --dir ml-out --output sample --cpus 8
 taf-sqanti3 sqanti3 init --config sqanti3_config.yaml
 taf-sqanti3 sqanti3 all --config sqanti3_config.yaml --dry-run
-taf-sqanti3 sqanti3 all --config sqanti3_config.yaml
 ```
 
-Run SQANTI-reads from existing per-sample SQANTI3 directories:
+For sequence input, use `--isoforms transcripts.fa --fasta --aligner_choice minimap2`
+with matching reference GTF/FASTA. Add `--include_ORF` to request TD2 prediction.
+Upstream recommends collapsed GTF input. Do not add an `exec` command or another
+entrypoint: ordinary explicit executable names use TAFFISH automatic command mode.
+Use `taf-sqanti3 sqanti3 qc ...`, not `taf-sqanti3 qc ...`.
+For a value containing spaces, TAFFISH 0.11.0 needs literal quotes preserved
+inside the argument, for example `--output "'report with spaces'"` for reads.
+Ordinary shell quoting alone is not the tested wrapper syntax.
+The YAML wrapper can ask for confirmation for disabled sections; prefer direct
+module commands in unattended jobs.
+
+### Version 6.1 changes affecting use
+
+Rescue now runs requantification by default and needs `--counts`.
+Its default evidence check can also require counts; `--skip_requant` alone does
+not disable that check. To intentionally perform neither operation:
 
 ```sh
-taf-sqanti3 sqanti3_reads.py \
-  --refFasta genome.fa \
-  --refGTF reference.gtf \
-  --design design.tsv \
-  --sqanti_dirs sqanti-output-root \
-  --output sqanti-reads \
-  --report html \
-  --cpus 8
+taf-sqanti3 sqanti3_rescue.py --filter_class filter-out/sample_RulesFilter_classification.txt --refGTF reference.gtf --refFasta genome.fa --corrected_isoforms_fasta qc-out/sample_corrected.fasta --filtered_isoforms_gtf filter-out/sample.filtered.gtf --strategy rules --mode automatic --skip_requant --skip_evidence_check --dir rescue-out --output sample --cpus 8
 ```
 
-## Command Mode
-
-This is a normal TAFFISH tool app with automatic command mode. The default
-command is the upstream `sqanti3` YAML wrapper. Use explicit packaged command
-names for direct, non-interactive pipeline use:
+These switches change the analysis and are not automatic packaging defaults.
+Read upstream help before choosing them. QC adds count-design/prevalence controls
+and minimum-intron information. SQANTI-reads has its own version `1.1.0`.
 
 ```sh
-taf-sqanti3 sqanti3_qc.py ...
-taf-sqanti3 sqanti3_filter.py rules ...
-taf-sqanti3 sqanti3_rescue.py ...
-taf-sqanti3 sqanti3_reads.py ...
+taf-sqanti3 sqanti3_reads.py --design design.csv --sqanti_dirs sqanti-output-root --refGTF reference.gtf --output reads-out --prefix sample --report both --cpus 8 --jobs 1
 ```
 
-Use `taf-sqanti3 -- --help` to pass an option-leading argument to the default
-command. The YAML wrapper can ask for confirmation when a requested section is
-disabled. Direct module commands are preferable in unattended flows.
+Open the resulting HTML in a local browser and the PDF in a PDF reader.
+They are upstream-generated reports, not TAFFISH-recalculated results.
+The native PDF summary table can have crowded long column headings; use the
+HTML and accompanying CSV/JSON for readable labels and exact values.
+The upstream rules-filter R report fails when no gene is wholly classified as
+an artifact (`all_artifacts_TRUE` is absent). For such input, explicitly add
+`--skip_report`; do not alter filtering rules merely to make the report render.
+Filtering tables remain the primary results. This upstream boundary is retained,
+not silently patched by the package.
 
-## Inputs
+## Inputs and Output Notes
 
-| Input | Meaning | Notes |
-| --- | --- | --- |
-| `--isoforms` | collapsed long-read transcriptome | GTF is recommended; FASTA/FASTQ also requires `--fasta` |
-| `--refGTF` | reference transcript annotation | chromosome names and assembly must match the genome |
-| `--refFasta` | reference genome FASTA | required by QC, rescue, and SQANTI-reads |
-| `--short_reads` | short-read FASTA/FASTQ FOFN | optional; may invoke STAR and kallisto |
-| `--SR_bam` | mapped short-read BAM directory or FOFN | optional TSS-ratio evidence |
-| `--coverage` | splice-junction coverage files | optional existing STAR-style evidence |
-| `--expression` | transcript expression matrix | optional existing kallisto-style evidence |
-| `--fl_count` | full-length PacBio abundance | optional isoform abundance evidence |
-| `--CAGE_peak` | CAGE peak BED | optional, assembly-specific |
-| `--polyA_motif_list` | ranked polyA motifs | optional, species-specific |
-| `--polyA_peak` | polyA site BED | optional, assembly-specific |
-| `--phyloP_bed` | phyloP BED | optional conservation evidence |
-| `--gff3` | tappAS-compatible annotation | optional IsoAnnotLite transfer source |
+Reference FASTA, annotation, BED tracks and aligned evidence must share assembly
+and sequence naming. Pre-create FASTA/BAM indexes before making inputs read-only.
+Use writable explicit output directories; references and shared resources are
+not output directories. Short-read/BAM/count inputs and derived indexes remain
+project inputs, not automatically downloaded resources.
 
-Collapse redundant long-read transcript models before SQANTI3 QC, as upstream
-recommends. Reference FASTA, reference GTF, BED tracks, and aligned evidence
-must describe the same assembly and use compatible sequence names.
+QC writes classification/junction tables, corrected GTF/FASTA, parameters,
+logs and requested reports. Filter writes its classification, passing IDs and
+optional filtered sequence/annotation files. Rescue and reads use their own
+output directories. Intermediate aligner, ORF and TUSCO outputs depend on options.
 
-## Output Notes
+## Backend Usage and Capability Matrix
 
-QC writes the selected `--dir` with logs and parameter records. Key files
-include `*_classification.txt`, `*_junctions.txt`, `*_corrected.gtf`,
-`*_corrected.fasta`, optional corrected ORF/FAA and IsoAnnotLite files, plus the
-requested HTML/PDF report. Extra STAR, kallisto, aligner, TD2, chunk, and TUSCO
-directories appear only when those paths are enabled.
+All ordinary commands have the same interface:
 
-Rules or ML filtering writes a filter classification, `*_pass_isoforms.txt`,
-optional filtered GTF/FASTA/SAM/FAA/GFF3 files, and a report unless
-`--skip_report` is used. Rescue and SQANTI-reads create their own requested
-output directories and reports.
+```sh
+TAFFISH_CONTAINER_BACKEND=docker taf-sqanti3 sqanti3_qc.py --help
+TAFFISH_CONTAINER_BACKEND=podman taf-sqanti3 sqanti3_qc.py --help
+TAFFISH_CONTAINER_BACKEND=apptainer taf-sqanti3 sqanti3_qc.py --help
+```
+
+Docker uses the invoking UID/GID; Podman uses keep-id; Apptainer uses the caller.
+Report generation is headless on all three backends; view completed files on
+the host. The native platform/backend validation record is in Testing below.
+ARM64 Linux Apptainer is not separately validated; this is not a claim of
+six native platform/backend combinations. GPU is unsupported on all backends;
+use the packaged CPU path.
 
 ## Resources, Databases, and Platform
 
-Native image platforms are `linux/amd64` and `linux/arm64`. The upstream source
-hard-codes an x86_64 `gtfToGenePred` filename; this image preserves that code
-path while linking it to Bioconda's architecture-native UCSC binary on each
-platform. Both architectures use upstream's CPU PyTorch 2.5.1 family for TD2.
-SQANTI3, Python, PyTorch, TD2, and PSAURON are pinned consistently across the
-two images. Platform-specific R and Bioconductor dependency builds may differ;
-each image records its exact resolved packages in
-`/opt/sqanti3/share/doc/sqanti3/conda-packages.txt` and `conda-explicit.txt`.
+The smallest reusable unit is an explicitly selected, versioned plain-text
+evidence member, not an entire mutable catalog. Supported helper kinds are
+`cage-bed`, `polya-bed` (BED6 or more), `polya-motifs` (one ranked DNA motif
+per line), `phylop-bed` (BED4), `isoannot-gff3` (tappAS GFF3) and
+`junctions-star` (STAR nine-column junction records).
+The helper checks identity, size, SHA256 and basic syntax, not biological
+compatibility. It never selects a species/assembly or converts scientific data.
 
-No fixed database mount or download step is required. Users provide the
-reference genome, matching annotation, and optional orthogonal evidence as
-normal command-line paths. A GMAP run additionally requires a user-built GMAP
-index supplied with `--gmap_index`.
+Potential sources include [refTSS](https://reftss.riken.jp/),
+[PolyASite](https://polyasite.unibas.ch/atlas), and the
+[tappAS GFF3 downloads](https://app.tappas.org/resources/downloads/gffs/).
+Their versions, assemblies, formats and licenses are independent.
+refTSS identifies CC-BY-4.0 on its site; do not infer that license for other
+resources. Review each member's actual license before installation or redistribution.
+Compressed bundles must be explicitly unpacked/converted outside this helper;
+pin the resulting plain file and record the preparation provenance separately.
+The original source URL remains provenance; for an archive URL use
+`--local-file`, never `--allow-download` against the archive.
 
-Whole-transcriptome QC, FASTA alignment, short-read processing, ORF prediction,
-ML filtering, rescue, and report generation can be CPU-, memory-, and
-storage-intensive. Set `--cpus` and output locations for the allocated system.
-TD2 works without a GPU but can be slow on large transcript sets.
+Create `member.json` with exactly these fields, replacing every example value:
 
-This image is a production runtime. Compiler frontends, development headers,
-Conda caches, and dependency-owned test fixtures are removed after installation
-and smoke validation. Compiling additional R or Python extensions inside the
-container is outside this app's contract; build a derived development image when
-that is required.
+```json
+{
+  "schema": "taffish.sqanti3.resource.v1",
+  "id": "selected-cage", "version": "selected-version",
+  "kind": "cage-bed", "assembly": "selected-assembly",
+  "url": "https://resource-provider.example/fixed-member.bed",
+  "sha256": "64-lowercase-hex-digits-from-the-selected-file",
+  "bytes": 12345, "filename": "peaks.bed",
+  "license": "reviewed-resource-license",
+  "license_url": "https://resource-provider.example/license"
+}
+```
 
-## Boundaries
+The placeholder descriptor is deliberately not installable. Obtain the actual
+byte count and checksum independently; a URL alone is not a fixed identity.
 
-- The image includes all commands called by supported upstream paths, but the quick smoke cannot reproduce every aligner, short-read protocol, optional evidence combination, ML model, rescue strategy, or SQANTI-reads study design.
-- The offline integration smoke runs real GTF correction/classification, rules filtering, annotation conversion, sequence extraction, and minimap2 remapping on synthetic data.
-- Report dependencies and R packages are loaded by smoke; production HTML/PDF appearance remains data-dependent and should be reviewed on the target dataset.
-- SQANTI3 is not a database distribution. Reference and evidence resources remain visible, versioned inputs controlled by the user or flow.
-- `sqanti3_reads.py --version` reports the SQANTI-reads component version `1.0.0`; the app and main SQANTI3 runtime version are `6.0.2`.
+```sh
+store="$HOME/.local/share/taffish/resources/sqanti3"
+mkdir -p "$store"
+chmod 0755 "$store"
+TAFFISH_SQANTI3_RESOURCE_INSTALL_ROOT="$store" taf-sqanti3 sqanti3-resources install --spec member.json --dry-run
+TAFFISH_SQANTI3_RESOURCE_INSTALL_ROOT="$store" taf-sqanti3 sqanti3-resources install --spec member.json --local-file peaks.bed --accept-license
+taf-sqanti3 sqanti3-resources list
+taf-sqanti3 sqanti3-resources path --id selected-cage --version selected-version
+```
+
+A network transfer requires both `--allow-download` and `--accept-license`;
+there is no implicit runtime download. Re-running installation verifies and
+reuses an identical installed member. It never overwrites an installed version.
+Interrupted downloads retain a private partial and can resume; `--restart`
+resets only that member's uncommitted payload. SHA/size/format failures never
+replace old resources. An atomic per-member directory lock prevents concurrent
+installation, including on host shares that do not enforce advisory file locks.
+Ctrl-C and TERM release the lock while preserving partial data. After SIGKILL,
+a crash or power loss, installation fails closed if a lock remains: first
+confirm that **all installers using this store have stopped**, then use `rmdir`
+on the exact empty `.locks/<hash>` directory printed in the error, on the host
+store (not the container path). Retry the same install to resume. Never remove
+a lock while another installer may be active; never remove the whole `.locks`,
+`.partial` or `members` tree. A PID from another container is not proof of staleness.
+Space is checked before transfer. A successful install atomically promotes
+the member and records its descriptor and READY checksum.
+
+Every install (including a new member or dry-run) validates the complete
+published store using the same validator as automatic discovery: root identity,
+permissions, every member's manifest/READY, size, checksum and basic format.
+Validation repeats under the member lock and immediately before promotion.
+A bad existing member or unsafe ROOT.json fails before transfer; the helper
+does not delete, overwrite or silently repair old resources. Restore the exact
+verified bytes/permissions from your backup, or select a separate verified root.
+Missing ROOT.json over an existing members tree is not treated as a new store.
+Only first-install initialization and uncommitted partials can resume without
+a completed member; they are never accepted by discovery as a usable library.
+
+### Administrator-once / read-only user reuse
+
+An administrator can pre-create
+`/usr/local/share/taffish/resources/sqanti3` or
+`/opt/taffish/resources/sqanti3`, then run the same explicit installer once.
+The store must not be group/world-writable. Installed files are 0644 and
+directories 0755; ancestors must also be traversable. Ordinary users need only
+read access and never rerun installation. No root privilege is requested by
+the wrapper itself.
+
+Discovery order is explicit `TAFFISH_SQANTI3_RESOURCE_ROOT`, personal
+`${XDG_DATA_HOME:-$HOME/.local/share}/taffish/resources/sqanti3`, then the two
+system paths above. Host Python 3 validates the same identity/format contract
+as the container helper before binding the store read-only at
+`/sqanti3-resources`. A valid root symlink is resolved; broken links and
+internal symlinks fail. A selected invalid root fails clearly rather than
+silently falling back. Set `TAFFISH_SQANTI3_RESOURCE_AUTO_MOUNT=0` to disable
+discovery, or use `TAFFISH_SQANTI3_RESOURCE_INSTALL_ROOT` for an explicit writable
+install bind at `/resource-install`.
+
+Upstream options still require explicit member paths, for example
+`--CAGE_peak /sqanti3-resources/members/selected-cage/selected-version/peaks.bed`.
+An empty root or merely downloaded partial is not a verified usable store.
+
+### Three-backend manual fallback
+
+For an already verified store, disable discovery and bind it explicitly.
+Use shell-safe absolute paths without whitespace, colon, comma or glob characters
+in these runtime-argument examples; use a safe alias/location otherwise.
+
+```sh
+TAFFISH_SQANTI3_RESOURCE_AUTO_MOUNT=0 TAFFISH_CONTAINER_BACKEND=docker TAFFISH_DOCKER_RUN_ARGS="--volume=$store:/sqanti3-resources:ro" taf-sqanti3 sqanti3-resources verify
+TAFFISH_SQANTI3_RESOURCE_AUTO_MOUNT=0 TAFFISH_CONTAINER_BACKEND=podman TAFFISH_PODMAN_RUN_ARGS="--volume=$store:/sqanti3-resources:ro" taf-sqanti3 sqanti3-resources verify
+TAFFISH_SQANTI3_RESOURCE_AUTO_MOUNT=0 TAFFISH_CONTAINER_BACKEND=apptainer TAFFISH_APPTAINER_RUN_ARGS="--bind=$store:/sqanti3-resources:ro" taf-sqanti3 sqanti3-resources verify
+```
+
+For manual installation, bind the pre-created writable store to
+`/resource-install` without `:ro`, keep discovery off and call the same
+`install` command. Do not write into the image's installation tree.
+Use the install-root variable when possible; it handles all three backends.
+
+## Runtime and Reproducibility Boundaries
+
+The image pins official application source and critical dependency identities.
+ARM64 uses R 4.4.2 and amd64 uses R 4.4.3, both with Bioconductor 3.20;
+the ARM64 build matches upstream's pysam constraint and available ICU/libdeflate
+dependencies. No algorithm changes or emulated platform claims are involved.
+Conda channels, transitive solves, APT indexes and upstream hosting can drift;
+Dockerfile comments describe the repair boundary. This is not a promise that
+all historical external URLs remain available forever. Resolved package lists
+are retained under `/opt/sqanti3/share/doc/sqanti3/`.
+Compiler frontends, headers, sysroots, caches and development/test payloads
+not needed at runtime are removed; compiling new packages in this runtime is
+outside the contract.
+
+Tiny bundled TUSCO panels are source-versioned; project FASTA/GTF/counts are
+explicit inputs. Optional resource families are not downloaded in full.
+PSAURON 1.1.3 includes its 792,554-byte model inside the image (SHA256
+`a1b0b67303af6db3514ce62a1d07e2c211d81c0659647b53a91db3f430b27f38`);
+its loader reads that packaged file, not a user cache or a network download.
+It therefore needs no separate system-wide model installer; every user reads
+the same image-contained model. External evidence uses the separate store above.
+No production study, whole-catalog biological compatibility, GPU performance
+or all optional aligner/ML/rescue combinations are certified by packaging smoke.
 
 ## Troubleshooting
 
-- If records disappear or classification fails, verify that reference and query chromosome names, coordinates, and assembly versions match.
-- If the YAML wrapper waits for input, enable the section in its config or call `sqanti3_qc.py`, `sqanti3_filter.py`, or `sqanti3_rescue.py` directly.
-- If FASTA input mapping fails, confirm `--fasta`, the selected `--aligner_choice`, and any required GMAP index path.
-- If report generation fails, rerun with `--report skip` to separate analysis from rendering, then inspect the module log and validate inputs before retrying the report.
-- If a run exhausts memory or storage, reduce `--cpus`/`--chunks` concurrency and place temporary/output data on a larger mounted filesystem.
+- Missing evidence: explicitly select/install a member, or omit the corresponding
+  optional upstream analysis option. The helper does not choose evidence for you.
+- Invalid resource root: run `sqanti3-resources verify`, restore matching bytes
+  and read/traverse permissions, or select another verified root. Do not edit READY.
+  Installing a different member or using `--restart` does not bypass this check.
+- Interrupted/corrupt partial: rerun the same install; use `--restart` only to
+  discard that uncommitted payload. Installed members are immutable.
+- Rescue asks for counts: supply the proper count matrix, or deliberately choose
+  both skip switches if you intend to skip both operations.
+- Failures on large datasets: check output space, RAM, CPUs, assembly/name
+  compatibility and upstream logs before changing scientific parameters.
+- R startup can mention an unavailable `otelsdk`. It is an optional `Suggests`
+  dependency of `otel` 0.2.0, not a required SQANTI3 analysis dependency;
+  required R imports and the tested offline reports pass without it.
 
 ## Testing
 
-The smoke suite checks:
+Runtime validation below covers the repaired 6.1-r1 candidate on 2026-10-21–22.
 
-- exact SQANTI3, SQANTI-reads, PyTorch, torchvision, and torchaudio identities
-- all five public SQANTI3 command surfaces and important subcommands
-- Python and R runtime imports used by QC, reports, ML filtering, and rescue
-- presence and basic identity of all packaged aligners and helper executables,
-  including the `gtftools` and coreutils calls used by SQANTI-reads
-- architecture-native `gtfToGenePred` wiring
-- real GTF correction/classification, rules filtering, sequence extraction, and minimap2 remapping
-- selected dynamic-library resolution in the final runtime image
-
-Every index smoke command is independent, offline, and self-contained. This is
-integration coverage for the packaged runtime, not scientific validation of a
-production transcriptome or all optional SQANTI3 modes.
+- Both native architectures passed canonical app-root builds: amd64 image
+  2,931,849,551 bytes; ARM64 image 2,885,091,406 bytes. Package caches,
+  development headers, compiler/sysroot files and non-runtime tests are removed;
+  required analysis/report/model dependencies remain.
+- xjp Docker and Podman: 141 independent exact probes per backend passed
+  (normal, read-only and read-only/nonroot), with networking disabled.
+- xjp Apptainer: 47 exact probes passed against the real read-only SIF made
+  from the same candidate OCI, as an ordinary user.
+- Each xjp backend passed 41 wrapper checks, 8 model/ORF/report/rescue checks,
+  3 count/prevalence checks and 8 terminal interruption/recovery/idempotence checks.
+  The wrapper resource suite includes 100 full-store validation/recovery cases,
+  42 existing negative/recovery/idempotence cases including SIGKILL fail-closed
+  recovery, plus 5 earliest-signal/lock-ownership cases. Bad existing stores
+  reject new members, dry-run and reuse without changing old bytes/permissions;
+  corruption during transfer prevents promotion and permits partial reuse after recovery.
+- A private representative shared bind passed 20 administrator-once,
+  ordinary-user read-only reuse and permission/recovery checks. This does not
+  claim that a real site's system-wide store has been deployed.
+- The 101 installed official source/configuration files match upstream bytes.
+  The packaged PSAURON model is loaded and evaluated offline.
+- The maintainer confirmed the native HTML's display and interactions; the
+  checked file is byte-identical to the final amd64 wrapper report. All 68 PDF
+  pages were rendered and visually reviewed, with the upstream layout limits above.
+- Native ARM64 Docker and Podman each passed 141 independent exact probes,
+  41 wrapper checks, the 100+42+5 resource/lock cases, 8 model/ORF/report/rescue
+  checks and 3 count/prevalence checks. Local Conda DNS timeouts required a
+  task-private BuildKit DNS configuration for the unchanged Dockerfile;
+  that builder/configuration was removed afterward. No host network settings
+  or Docker/Podman engine were restarted or changed.
+- Linux ARM64 Apptainer is not separately validated. This is not a claim of
+  all six architecture/backend combinations; no backend exception is assumed.
+- These are pre-publication packaging checks, not a formal biological study.
 
 ## License and Citation
 
-TAFFISH app packaging is Apache-2.0. SQANTI3 remains GPL-3.0-only; its license,
-third-party notices, and Cupcake notice are retained in the image.
+TAFFISH packaging is Apache-2.0; SQANTI3 is GPL-3.0-only. Upstream documentation
+and license files are retained in the image. Dependencies, models and external
+evidence retain their own licenses; installing a member requires explicit
+license acknowledgement and does not grant redistribution rights.
 
-Primary citation: Pardo-Palacios FJ, et al. SQANTI3: curation of long-read
-transcriptomes for accurate identification of known and novel isoforms. Nature
-Methods. 2024. doi:10.1038/s41592-024-02229-2.
-
-For SQANTI-reads and TUSCO analyses, also cite the component-specific papers
-listed in the [official SQANTI3 documentation](https://conesalab.github.io/SQANTI3/latest/).
+Cite Pardo-Palacios FJ et al., Nature Methods (2024),
+[doi:10.1038/s41592-024-02229-2](https://doi.org/10.1038/s41592-024-02229-2).

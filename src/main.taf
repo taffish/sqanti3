@@ -1,2 +1,38 @@
-<taf-app:container:ghcr.io/taffish/sqanti3:6.0.2-r1>
+<shell>
+# Expose a verified optional evidence store; never choose a species or scientific input.
+taf_sq_fail() { printf >&2 'taf-sqanti3: %s\n' "$1"; exit 64; }
+taf_sq_safe() {
+    test -n "$1" && test "$(printf '%s' "$1" | tr -d ' \011\012\013\014\015\052\054\072\077\133\135')" = "$1"
+}
+taf_sq_install=
+if test "${TAFFISH_SQANTI3_RESOURCE_INSTALL_ROOT+x}" = x; then
+    taf_sq_install=${TAFFISH_SQANTI3_RESOURCE_INSTALL_ROOT:-}
+    test -d "$taf_sq_install" && test -w "$taf_sq_install" && ! test -L "$taf_sq_install" || taf_sq_fail 'RESOURCE_INSTALL_ROOT must be an existing writable real directory'
+    taf_sq_install=$(CDPATH= cd "$taf_sq_install" && pwd -P)
+    taf_sq_safe "$taf_sq_install" || taf_sq_fail 'install root contains unsupported whitespace, colon, comma or glob characters; use a safe path or manual bind'
+fi
+taf_sq_root=
+case "${TAFFISH_SQANTI3_RESOURCE_AUTO_MOUNT:-1}" in
+    0) ;;
+    1)
+        if test -z "$taf_sq_install"; then
+            if test "${TAFFISH_SQANTI3_RESOURCE_ROOT+x}" = x; then
+                taf_sq_root=${TAFFISH_SQANTI3_RESOURCE_ROOT:-}
+                test -n "$taf_sq_root" || taf_sq_fail 'RESOURCE_ROOT is empty'
+            else
+                for taf_sq_path in "${XDG_DATA_HOME:-${HOME}/.local/share}/taffish/resources/sqanti3" /usr/local/share/taffish/resources/sqanti3 /opt/taffish/resources/sqanti3; do
+                    if test -e "$taf_sq_path" || test -L "$taf_sq_path"; then taf_sq_root=$taf_sq_path; break; fi
+                done
+            fi
+            if test -n "$taf_sq_root"; then
+                test -d "$taf_sq_root" || taf_sq_fail 'selected resource root is missing or a broken link'
+                taf_sq_root=$(CDPATH= cd "$taf_sq_root" && pwd -P)
+                taf_sq_safe "$taf_sq_root" || taf_sq_fail 'resource root contains unsupported whitespace, colon, comma or glob characters; use a safe path or manual bind'
+                command -v python3 >/dev/null 2>&1 || taf_sq_fail 'automatic resource validation requires host Python 3; disable discovery and use the documented verified manual bind'
+                python3 -I -B "::*LOADDIR*::/resource_validation.py" "$taf_sq_root" || taf_sq_fail 'resource validation failed; verify/repair the explicit root or set TAFFISH_SQANTI3_RESOURCE_AUTO_MOUNT=0'
+            fi
+        fi ;;
+    *) taf_sq_fail 'RESOURCE_AUTO_MOUNT must be 0 or 1' ;;
+esac
+<taf-app:container:ghcr.io/taffish/sqanti3:6.1-r1$@[docker: --user=$(id -u):$(id -g)][podman: --userns=keep-id --user=$(id -u):$(id -g)][docker/podman: $(if test -n "$taf_sq_install"; then printf -- '--volume=%s:/resource-install' "$taf_sq_install"; fi) $(if test -n "$taf_sq_root"; then printf -- '--volume=%s:/sqanti3-resources:ro' "$taf_sq_root"; fi)][apptainer: $(if test -n "$taf_sq_install"; then printf -- '--bind=%s:/resource-install' "$taf_sq_install"; fi) $(if test -n "$taf_sq_root"; then printf -- '--bind=%s:/sqanti3-resources:ro' "$taf_sq_root"; fi)]>
 sqanti3 ::*ARGV*::

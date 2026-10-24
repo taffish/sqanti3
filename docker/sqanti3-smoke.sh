@@ -1,5 +1,5 @@
-#!/bin/sh
-set -eu
+#!/bin/bash
+set -Eeuo pipefail
 
 export PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export LD_LIBRARY_PATH=/opt/conda/lib
@@ -15,25 +15,40 @@ export OPENBLAS_NUM_THREADS=1
 export OMP_NUM_THREADS=1
 
 mode="${1:-all}"
+tmp=
+lastlog=
+cleanup() { if test -n "$tmp"; then rm -rf "$tmp"; fi; }
+failure() {
+  status=$?
+  printf >&2 'SQANTI3_SMOKE_FAIL stage=%s exit=%s\n' "$mode" "$status"
+  if test -n "$lastlog" && test -f "$lastlog"; then tail -60 "$lastlog" >&2; fi
+  exit "$status"
+}
+trap failure ERR
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+capture() { lastlog="$tmp/$1.log"; shift; "$@" >"$lastlog" 2>&1; }
 
 buildtime() {
-  sqanti3_qc.py --version 2>&1 | grep -Fx 'SQANTI3 6.0.2' >/dev/null
+  sqanti3_qc.py --version 2>&1 | grep -Fx 'SQANTI3 6.1' >/dev/null
   sqanti3 --help 2>&1 | grep -F 'Python wrapper for SQANTI3 pipeline' >/dev/null
   sqanti3_qc.py --help 2>&1 | grep -F -- '--refFasta' >/dev/null
   sqanti3_filter.py rules --help 2>&1 | grep -F -- '--sqanti_class' >/dev/null
   sqanti3_rescue.py --help 2>&1 | grep -F -- '--filter_class' >/dev/null
   sqanti3_reads.py --help 2>&1 | grep -F -- '--design' >/dev/null
+  sqanti3-resources --help >/dev/null
   Rscript --version 2>&1 | grep -F 'Rscript (R) version' >/dev/null
-  test -L /opt/conda/share/sqanti3-6.0.2-1/src/utilities/gtfToGenePred-linux-x86_64
-  test "$(readlink /opt/conda/share/sqanti3-6.0.2-1/src/utilities/gtfToGenePred-linux-x86_64)" = '/opt/conda/bin/gtfToGenePred'
+  test -L /opt/conda/share/sqanti3-6.1-1/src/utilities/gtfToGenePred-linux-x86_64
+  test "$(readlink /opt/conda/share/sqanti3-6.1-1/src/utilities/gtfToGenePred-linux-x86_64)" = '/opt/conda/bin/gtfToGenePred'
   printf 'sqanti3_buildtime_ok\n'
 }
 
 identity() {
-  sqanti3_qc.py --version 2>&1 | grep -Fx 'SQANTI3 6.0.2' >/dev/null
-  sqanti3_filter.py rules --version 2>&1 | grep -Fx 'SQANTI3 6.0.2' >/dev/null
-  sqanti3_rescue.py --version 2>&1 | grep -Fx 'SQANTI3 v6.0.2' >/dev/null
-  sqanti3_reads.py --version 2>&1 | grep -Fx 'sqanti-reads 1.0.0' >/dev/null
+  sqanti3_qc.py --version 2>&1 | grep -Fx 'SQANTI3 6.1' >/dev/null
+  sqanti3_filter.py rules --version 2>&1 | grep -Fx 'SQANTI3 6.1' >/dev/null
+  sqanti3_rescue.py --version 2>&1 | grep -Fx 'SQANTI3 v6.1' >/dev/null
+  sqanti3_reads.py --version 2>&1 | grep -Fx 'sqanti-reads 1.1.0' >/dev/null
   python - <<'PY'
 import importlib.metadata as md
 import runpy
@@ -43,6 +58,7 @@ import gffutils
 import gtfparse
 import numpy
 import pandas
+import plotly
 import polars
 import pyarrow
 import pybedtools
@@ -53,8 +69,8 @@ import torch
 import torchaudio
 import torchvision
 
-config = runpy.run_path("/opt/conda/share/sqanti3-6.0.2-1/src/config.py")
-assert config["__version__"] == "6.0.2"
+config = runpy.run_path("/opt/conda/share/sqanti3-6.1-1/src/config.py")
+assert config["__version__"] == "6.1"
 assert md.version("torch").startswith("2.5.1")
 assert md.version("torchaudio") == "2.5.1"
 assert md.version("torchvision") == "0.20.1"
@@ -66,43 +82,42 @@ PY
 
 modules() {
   tmp="$(mktemp -d /tmp/taf-sqanti3-modules.XXXXXX)"
-  trap 'rm -rf "$tmp"' EXIT HUP INT TERM
-  sqanti3 --help >"$tmp/sqanti3.help" 2>&1
-  sqanti3 qc --help >"$tmp/qc-wrapper.help" 2>&1
-  printf 'rules\n' | sqanti3 filter --help >"$tmp/filter-wrapper.help" 2>&1
-  sqanti3 rescue --help >"$tmp/rescue-wrapper.help" 2>&1
-  sqanti3 init --help >"$tmp/init-wrapper.help" 2>&1
-  sqanti3_qc.py --help >"$tmp/qc.help" 2>&1
-  sqanti3_filter.py rules --help >"$tmp/rules.help" 2>&1
-  sqanti3_filter.py ml --help >"$tmp/ml.help" 2>&1
-  sqanti3_rescue.py --help >"$tmp/rescue.help" 2>&1
-  sqanti3_reads.py --help >"$tmp/reads.help" 2>&1
-  grep -F '{all,qc,filter,rescue,init}' "$tmp/sqanti3.help" >/dev/null
-  grep -F -- '--include_ORF' "$tmp/qc.help" >/dev/null
-  grep -F -- '--aligner_choice' "$tmp/qc.help" >/dev/null
-  grep -F -- '--json_filter' "$tmp/rules.help" >/dev/null
-  grep -F -- '--percent_training' "$tmp/ml.help" >/dev/null
-  grep -F -- '--mode' "$tmp/rescue.help" >/dev/null
-  grep -F -- '--sqanti_dirs' "$tmp/reads.help" >/dev/null
-  gffread --version >"$tmp/gffread.version" 2>&1
-  gmap --version >"$tmp/gmap.version" 2>&1
-  minimap2 --version >"$tmp/minimap2.version" 2>&1
-  STAR --version >"$tmp/star.version" 2>&1
-  kallisto version >"$tmp/kallisto.version" 2>&1
-  samtools --version >"$tmp/samtools.version" 2>&1
-  uLTRA --version >"$tmp/ultra.version" 2>&1
-  TD2.LongOrfs --help >"$tmp/td2-longorfs.help" 2>&1
-  TD2.Predict --help >"$tmp/td2-predict.help" 2>&1
-  grep -Eq '^[0-9]+\.[0-9]+(-r[0-9]+)?$' "$tmp/minimap2.version"
-  grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$' "$tmp/star.version"
-  grep -F 'kallisto, version' "$tmp/kallisto.version" >/dev/null
-  grep -E '^samtools [0-9]+' "$tmp/samtools.version" >/dev/null
+  capture sqanti3 sqanti3 --help
+  capture qc-wrapper sqanti3 qc --help
+  printf 'rules\n' | capture filter-wrapper sqanti3 filter --help
+  capture rescue-wrapper sqanti3 rescue --help
+  capture init-wrapper sqanti3 init --help
+  capture qc sqanti3_qc.py --help
+  capture rules sqanti3_filter.py rules --help
+  capture ml sqanti3_filter.py ml --help
+  capture rescue sqanti3_rescue.py --help
+  capture reads sqanti3_reads.py --help
+  grep -F '{all,qc,filter,rescue,init}' "$tmp/sqanti3.log" >/dev/null
+  grep -F -- '--include_ORF' "$tmp/qc.log" >/dev/null
+  grep -F -- '--aligner_choice' "$tmp/qc.log" >/dev/null
+  grep -F -- '--counts_design' "$tmp/qc.log" >/dev/null
+  grep -F -- '--json_filter' "$tmp/rules.log" >/dev/null
+  grep -F -- '--percent_training' "$tmp/ml.log" >/dev/null
+  grep -F -- '--skip_requant' "$tmp/rescue.log" >/dev/null
+  grep -F -- '--sqanti_dirs' "$tmp/reads.log" >/dev/null
+  capture gffread-version gffread --version
+  capture gmap-version gmap --version
+  capture minimap2-version minimap2 --version
+  capture star-version STAR --version
+  capture kallisto-version kallisto version
+  capture samtools-version samtools --version
+  capture ultra-version uLTRA --version
+  capture td2-longorfs TD2.LongOrfs --help
+  capture td2-predict TD2.Predict --help
+  grep -Eq '^[0-9]+\.[0-9]+(-r[0-9]+)?$' "$tmp/minimap2-version.log"
+  grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+[a-z]?$' "$tmp/star-version.log"
+  grep -F 'kallisto, version' "$tmp/kallisto-version.log" >/dev/null
+  grep -E '^samtools [0-9]+' "$tmp/samtools-version.log" >/dev/null
   printf 'sqanti3_modules_ok\n'
 }
 
 pipeline() {
   tmp="$(mktemp -d /tmp/taf-sqanti3-pipeline.XXXXXX)"
-  trap 'rm -rf "$tmp"' EXIT HUP INT TERM
   cd "$tmp"
 
   awk 'BEGIN { print ">chr1"; for (i = 0; i < 800; i++) printf "ACGTACGT"; print "" }' > reference.fa
@@ -141,6 +156,7 @@ GTF
   test -s qc-out/tiny_corrected.gtf
   test -s qc-out/tiny_corrected.fasta
   grep -F 'structural_category' qc-out/tiny_classification.txt >/dev/null
+  grep -F 'min_intron_length' qc-out/tiny_classification.txt >/dev/null
   grep -F 'PB.1.1' qc-out/tiny_classification.txt >/dev/null
 
   sqanti3_filter.py rules \
@@ -159,6 +175,85 @@ GTF
   printf 'sqanti3_pipeline_ok\n'
 }
 
+reports() {
+  tmp="$(mktemp -d /tmp/taf-sqanti3-reports.XXXXXX)"
+  cd "$tmp"
+  fixture=/opt/sqanti3/share/testdata/reads
+  capture reads-report sqanti3_reads.py --design "$fixture/design.csv" \
+    --sqanti_dirs "$fixture/sqanti_dirs" --refGTF "$fixture/reference/gencode.v38.basic_chr22.gtf" \
+    --output "$tmp/report" --prefix sqantiReads -ge 10 --report both --jobs 1 --cpus 1
+  test -s report/sqantiReads_report.html
+  test -s report/sqantiReads_report.pdf
+  python - <<'PY'
+from pathlib import Path
+import json
+import pandas as pd
+from pandas.testing import assert_frame_equal
+base = Path('/opt/sqanti3/share/testdata/reads/baseline')
+out = Path('report')
+for expected in sorted(base.glob('*.csv')):
+    assert_frame_equal(pd.read_csv(out/expected.name), pd.read_csv(expected), check_dtype=False, rtol=1e-6)
+assert (out/'sqantiReads_report.pdf').read_bytes().startswith(b'%PDF-')
+html = (out/'sqantiReads_report.html').read_text()
+assert html.count('Plotly.newPlot') > 10
+assert 'plotly.js' in html.lower() and '<html' in html.lower()
+summary = list(out.glob('*qc_summary.json'))
+assert len(summary) == 1 and json.loads(summary[0].read_text())
+PY
+  printf 'sqanti3_reports_ok\n'
+}
+
+resources() {
+  tmp="$(mktemp -d /tmp/taf-sqanti3-resources.XXXXXX)"
+  cd "$tmp"
+  mkdir root
+  chmod 0755 root
+  python - <<'PY'
+import hashlib, json
+from pathlib import Path
+payload=b'chrSynthetic\t10\t20\tpeak\t1\t+\n'
+Path('evidence.bed').write_bytes(payload)
+spec=dict(schema='taffish.sqanti3.resource.v1', id='synthetic', version='1', kind='cage-bed',
+          assembly='synthetic', url='https://example.invalid/evidence.bed', bytes=len(payload),
+          sha256=hashlib.sha256(payload).hexdigest(), filename='evidence.bed',
+          license='CC0-1.0 synthetic test fixture', license_url='https://creativecommons.org/publicdomain/zero/1.0/')
+Path('spec.json').write_text(json.dumps(spec))
+spec['version'] = '2'
+Path('next.json').write_text(json.dumps(spec))
+PY
+  capture dry-run sqanti3-resources install --root "$tmp/root" --spec spec.json --dry-run
+  grep -F 'license_acceptance_required' "$lastlog" >/dev/null
+  capture install sqanti3-resources install --root "$tmp/root" --spec spec.json --local-file evidence.bed --accept-license
+  capture idempotent sqanti3-resources install --root "$tmp/root" --spec spec.json --local-file evidence.bed --accept-license
+  grep -F 'already verified' "$lastlog" >/dev/null
+  capture verify sqanti3-resources verify --root "$tmp/root"
+  chmod 0666 root/ROOT.json
+  if sqanti3-resources install --root "$tmp/root" --spec next.json --local-file evidence.bed --accept-license >"$tmp/unsafe-root.log" 2>&1; then
+    printf >&2 'new member accepted an unsafe resource root\n'; return 1
+  fi
+  grep -F 'not writable' "$tmp/unsafe-root.log" >/dev/null
+  test ! -e root/members/synthetic/2
+  chmod 0644 root/ROOT.json
+  printf 'corrupt\n' >> root/members/synthetic/1/evidence.bed
+  if sqanti3-resources verify --root "$tmp/root" >"$tmp/corrupt.log" 2>&1; then
+    printf >&2 'corrupt resource was accepted\n'; return 1
+  fi
+  grep -F 'mismatch' "$tmp/corrupt.log" >/dev/null
+  sha256sum root/members/synthetic/1/* > before.sha256
+  if sqanti3-resources install --root "$tmp/root" --spec next.json --local-file evidence.bed --accept-license >"$tmp/new-member.log" 2>&1; then
+    printf >&2 'new member accepted a corrupt resource store\n'; return 1
+  fi
+  grep -F 'mismatch' "$tmp/new-member.log" >/dev/null
+  test ! -e root/members/synthetic/2
+  sha256sum -c before.sha256 >/dev/null
+  cp evidence.bed root/members/synthetic/1/evidence.bed
+  capture recovered sqanti3-resources install --root "$tmp/root" --spec next.json --local-file evidence.bed --accept-license
+  capture recovered-idempotent sqanti3-resources install --root "$tmp/root" --spec next.json
+  grep -F 'already verified' "$lastlog" >/dev/null
+  capture final-verify sqanti3-resources verify --root "$tmp/root"
+  printf 'sqanti3_resources_ok\n'
+}
+
 case "$mode" in
   buildtime)
     buildtime
@@ -172,11 +267,15 @@ case "$mode" in
   pipeline)
     pipeline
     ;;
+  reports) reports ;;
+  resources) resources ;;
   all)
     buildtime
     identity
     modules
     pipeline
+    reports
+    resources
     ;;
   *)
     printf 'unknown smoke mode: %s\n' "$mode" >&2
